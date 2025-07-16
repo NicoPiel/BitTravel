@@ -2,5 +2,9 @@ mod chunk;
 
 #[tokio::main]
 async fn main() {
-    chunk::TerrainChunkState::from_file(1).ok();
+    let chunks = chunk::TerrainChunkState::from_bsatn("./data/terrain_chunk_state_9.bsatn")
+        .ok()
+        .unwrap();
+
+    println!("Worked? {:#?}", chunks[0]);
 }
