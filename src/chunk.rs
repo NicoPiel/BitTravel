@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 use spacetimedb_lib::{bsatn::Deserializer, buffer::Cursor, de::VariantAccess};
-use std::{fs::File, io::Read};
+use std::{
+    fs::File,
+    io::{BufReader, Read},
+};
 
 #[derive(Serialize, spacetimedb_lib::de::Deserialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct TerrainChunkState {
@@ -12,8 +15,8 @@ pub struct TerrainChunkState {
     pub biome_density: Vec<u32>,
     pub elevations: Vec<i16>,
     pub water_levels: Vec<i16>,
-    pub water_body_types: String, // should be Vec<u8>
-    pub zoning_types: String,     // should be Vec<u8>
+    pub water_body_types: Vec<u8>,
+    pub zoning_types: Vec<u8>,
     pub original_elevations: Vec<i16>,
 }
 
