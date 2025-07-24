@@ -1,9 +1,6 @@
 use serde::{Deserialize, Serialize};
 use spacetimedb_lib::{bsatn::Deserializer, buffer::Cursor, de::VariantAccess};
-use std::{
-    fs::File,
-    io::{BufReader, Read},
-};
+use std::{fs::File, io::Read};
 
 #[derive(Serialize, spacetimedb_lib::de::Deserialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct TerrainChunkState {
