@@ -26,6 +26,7 @@ log = { version = "*", features = [
 ] }
 log4rs = "1.3.0"
 itertools = "0.14.0"
+phf = { version = "0.12", features = ["macros"] }
 
 # Enable a small amount of optimization in the dev profile.
 [profile.dev]

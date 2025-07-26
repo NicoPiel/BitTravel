@@ -1,14 +1,12 @@
 use bevy::math::ops::sqrt;
-use hexx::{Hex, hex};
 use serde::{Deserialize, Serialize};
 use spacetimedb_lib::{bsatn::Deserializer, buffer::Cursor, de::VariantAccess};
 use std::{
     fs::{self, File},
     io::Read,
-    ops::{Add, Mul},
 };
 
-use crate::terrain::{cell::Cell, chunk};
+use crate::terrain::cell::Cell;
 
 #[derive(Serialize, spacetimedb_lib::de::Deserialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct TerrainChunkState {
@@ -61,7 +59,7 @@ impl TerrainChunkState {
                 let path_str = match path.to_str() {
                     Some(s) => s,
                     None => {
-                        log::warn!("Failed to convert path to string: {:?}", path);
+                        log::warn!("Failed to convert path to string: {path:?}");
                         return None;
                     }
                 };
@@ -91,7 +89,7 @@ impl TerrainChunkState {
 
         for i in 0..chunk_radius {
             for j in 0..chunk_radius {
-                let cell_in_chunk = i * j;
+                let cell_in_chunk = i * chunk_radius + j;
                 let cell_x = chunk_radius * self.chunk_x + i;
                 let cell_z = chunk_radius * self.chunk_z + j;
 
@@ -103,7 +101,6 @@ impl TerrainChunkState {
                 });
             }
         }
-
         cells
     }
 }
