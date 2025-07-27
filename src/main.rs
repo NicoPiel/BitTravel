@@ -105,11 +105,7 @@ fn setup_grid(
         let entities: HashMap<Hex, Entity> = all_cells
             .into_iter()
             .map(|cell| {
-                // Center coordinates around (0,0)
-                let centered_x = cell.cell_x as f32 - center_x;
-                let centered_z = cell.cell_z as f32 - center_z;
-
-                let hex = layout.world_pos_to_hex(vec2(centered_x, centered_z));
+                let hex = layout.world_pos_to_hex(vec2(cell.cell_x as f32, cell.cell_z as f32));
                 let pos = layout.hex_to_world_pos(hex);
 
                 // Calculate biome-based color
