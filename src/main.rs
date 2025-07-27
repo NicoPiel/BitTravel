@@ -51,87 +51,88 @@ fn setup_grid(
     let mesh = hexagonal_plane(&layout);
     let mesh_handle = meshes.add(mesh);
 
-    let region =
-        TerrainChunkState::from_bsatn("./data/5.bsatn").expect("Failed to load region data");
+    let regions = TerrainChunkState::from_dir("./data").expect("Could not read data dir!");
 
-    log::info!("Loaded {} chunks from single region file", region.len());
+    for region in regions {
+        log::info!("Loaded {} chunks from region file", region.len());
 
-    // More sophisticated filtering: allow first (0,0) chunk, filter out the rest
-    let all_chunks: Vec<_> = region
-        .iter()
-        .enumerate()
-        .filter_map(|(idx, chunk)| {
-            if chunk.chunk_x == 0 && chunk.chunk_z == 0 {
-                if idx == 0 {
-                    log::info!("Including valid origin chunk at index {idx}");
-                    Some(chunk)
+        // More sophisticated filtering: allow first (0,0) chunk, filter out the rest
+        let all_chunks: Vec<_> = region
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, chunk)| {
+                if chunk.chunk_x == 0 && chunk.chunk_z == 0 {
+                    if idx == 0 {
+                        log::info!("Including valid origin chunk at index {idx}");
+                        Some(chunk)
+                    } else {
+                        None // Filter out invalid instanced chunks at (0,0)
+                    }
                 } else {
-                    None // Filter out invalid instanced chunks at (0,0)
+                    Some(chunk)
                 }
-            } else {
-                Some(chunk)
-            }
-        })
-        .collect();
+            })
+            .collect();
 
-    log::info!(
-        "After filtering: {} valid chunks (removed {} invalid (0,0) chunks)",
-        all_chunks.len(),
-        region.len() - all_chunks.len()
-    );
+        log::info!(
+            "After filtering: {} valid chunks (removed {} invalid (0,0) chunks)",
+            all_chunks.len(),
+            region.len() - all_chunks.len()
+        );
 
-    // Calculate the center of all cells to offset coordinates around (0,0)
-    let all_cells: Vec<_> = all_chunks.iter().flat_map(|chunk| chunk.cells()).collect();
+        // Calculate the center of all cells to offset coordinates around (0,0)
+        let all_cells: Vec<_> = all_chunks.iter().flat_map(|chunk| chunk.cells()).collect();
 
-    let (min_x, max_x, min_z, max_z) = all_cells.iter().fold(
-        (i32::MAX, i32::MIN, i32::MAX, i32::MIN),
-        |(min_x, max_x, min_z, max_z), cell| {
-            (
-                min_x.min(cell.cell_x),
-                max_x.max(cell.cell_x),
-                min_z.min(cell.cell_z),
-                max_z.max(cell.cell_z),
-            )
-        },
-    );
+        let (min_x, max_x, min_z, max_z) = all_cells.iter().fold(
+            (i32::MAX, i32::MIN, i32::MAX, i32::MIN),
+            |(min_x, max_x, min_z, max_z), cell| {
+                (
+                    min_x.min(cell.cell_x),
+                    max_x.max(cell.cell_x),
+                    min_z.min(cell.cell_z),
+                    max_z.max(cell.cell_z),
+                )
+            },
+        );
 
-    let center_x = (min_x + max_x) as f32 / 2.0;
-    let center_z = (min_z + max_z) as f32 / 2.0;
+        let center_x = (min_x + max_x) as f32 / 2.0;
+        let center_z = (min_z + max_z) as f32 / 2.0;
 
-    log::info!(
-        "Hex field bounds: x[{min_x} to {max_x}], z[{min_z} to {max_z}], centering at ({center_x:.1}, {center_z:.1})"
-    );
+        log::info!(
+            "Hex field bounds: x[{min_x} to {max_x}], z[{min_z} to {max_z}], centering at ({center_x:.1}, {center_z:.1})"
+        );
 
-    let entities: HashMap<Hex, Entity> = all_cells
-        .into_iter()
-        .map(|cell| {
-            // Center coordinates around (0,0)
-            let centered_x = cell.cell_x as f32 - center_x;
-            let centered_z = cell.cell_z as f32 - center_z;
+        let entities: HashMap<Hex, Entity> = all_cells
+            .into_iter()
+            .map(|cell| {
+                // Center coordinates around (0,0)
+                let centered_x = cell.cell_x as f32 - center_x;
+                let centered_z = cell.cell_z as f32 - center_z;
 
-            let hex = layout.world_pos_to_hex(vec2(centered_x, centered_z));
-            let pos = layout.hex_to_world_pos(hex);
+                let hex = layout.world_pos_to_hex(vec2(centered_x, centered_z));
+                let pos = layout.hex_to_world_pos(hex);
 
-            // Calculate biome-based color
-            let biome = cell.biome;
-            let elevation = cell.elevation;
-            let color = calculate_hex_color(biome, elevation);
-            // log::info!("{color:?}");
-            let material = materials.add(ColorMaterial::from(color));
+                // Calculate biome-based color
+                let biome = cell.biome;
+                let elevation = cell.elevation;
+                let color = calculate_hex_color(biome, elevation);
+                // log::info!("{color:?}");
+                let material = materials.add(ColorMaterial::from(color));
 
-            let id = commands
-                .spawn((
-                    Mesh2d(mesh_handle.clone()),
-                    MeshMaterial2d(material),
-                    Transform::from_xyz(pos.x, pos.y, 0.0),
-                ))
-                .id();
-            (hex, id)
-        })
-        .collect();
+                let id = commands
+                    .spawn((
+                        Mesh2d(mesh_handle.clone()),
+                        MeshMaterial2d(material),
+                        Transform::from_xyz(pos.x, pos.y, 0.0),
+                    ))
+                    .id();
+                (hex, id)
+            })
+            .collect();
 
-    // DEBUG: Log total number of entities created
-    log::info!("Created {} hex entities for rendering", entities.len());
+        // DEBUG: Log total number of entities created
+        log::info!("Created {} hex entities for rendering", entities.len());
+    }
 }
 
 /// Camera controls for zooming and panning
