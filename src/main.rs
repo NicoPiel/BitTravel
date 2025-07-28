@@ -1,17 +1,15 @@
 use bevy::{
     input::mouse::{MouseMotion, MouseWheel},
-    platform::collections::HashMap,
     prelude::*,
-    render::{mesh::Indices, render_asset::RenderAssetUsages, render_resource::PrimitiveTopology},
 };
-use hexx::*;
 
 pub mod terrain;
 
-use terrain::{chunk::TerrainChunkState, color_utils::calculate_hex_color};
-
-/// World size of the hexagons (outer radius)
-const HEX_SIZE: f32 = 13.0;
+use terrain::{
+    chunk::TerrainChunkState,
+    dynamic_chunks::{SpawnedChunks, update_dynamic_chunks},
+    world_data::WorldData,
+};
 
 pub fn main() {
     // og4rs::init_file("config/log4rs.yaml", Default::default()).unwrap();
@@ -28,37 +26,44 @@ pub fn main() {
                 })
                 .set(bevy::log::LogPlugin { ..default() }),
         )
-        .add_systems(Startup, (setup_camera, setup_grid))
-        .add_systems(Update, camera_controls)
+        .init_resource::<WorldData>()
+        .init_resource::<SpawnedChunks>()
+        .add_systems(Startup, (load_world_data, setup_camera).chain())
+        .add_systems(Update, (camera_controls, update_dynamic_chunks))
         .run();
 
     log::info!("Done.");
 }
 
-/// 2D camera setup
-fn setup_camera(mut commands: Commands) {
-    commands.spawn(Camera2d);
+/// 2D camera setup - position camera at world center
+fn setup_camera(mut commands: Commands, world_data: Res<WorldData>) {
+    // Position camera at world center so we can see terrain immediately
+    let camera_pos = Vec3::new(
+        -world_data.center_offset.x,
+        -world_data.center_offset.y,
+        0.0,
+    );
+
+    commands.spawn((Camera2d, Transform::from_translation(camera_pos)));
+
+    log::info!(
+        "Camera positioned at ({:.1}, {:.1}) to center on world",
+        camera_pos.x,
+        camera_pos.y
+    );
 }
 
-/// Hex grid setup
-fn setup_grid(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-) {
-    let layout = HexLayout::pointy().with_hex_size(HEX_SIZE);
-    // mesh
-    let mesh = hexagonal_plane(&layout);
-    let mesh_handle = meshes.add(mesh);
-
+/// Load all world data into memory for dynamic chunk loading
+fn load_world_data(mut world_data: ResMut<WorldData>) {
     let regions = TerrainChunkState::from_dir("./data").expect("Could not read data dir!");
 
     for region in regions {
         log::info!("Loaded {} chunks from region file", region.len());
 
-        // More sophisticated filtering: allow first (0,0) chunk, filter out the rest
-        let all_chunks: Vec<_> = region
-            .iter()
+        // Filter out invalid chunks
+        let region_len = region.len();
+        let valid_chunks: Vec<_> = region
+            .into_iter()
             .enumerate()
             .filter_map(|(idx, chunk)| {
                 if chunk.chunk_x == 0 && chunk.chunk_z == 0 {
@@ -75,60 +80,38 @@ fn setup_grid(
             .collect();
 
         log::info!(
-            "After filtering: {} valid chunks (removed {} invalid (0,0) chunks)",
-            all_chunks.len(),
-            region.len() - all_chunks.len()
+            "After filtering: {} valid chunks (removed {} invalid chunks)",
+            valid_chunks.len(),
+            region_len - valid_chunks.len()
         );
 
-        // Calculate the center of all cells to offset coordinates around (0,0)
-        let all_cells: Vec<_> = all_chunks.iter().flat_map(|chunk| chunk.cells()).collect();
-
-        let (min_x, max_x, min_z, max_z) = all_cells.iter().fold(
-            (i32::MAX, i32::MIN, i32::MAX, i32::MIN),
-            |(min_x, max_x, min_z, max_z), cell| {
-                (
-                    min_x.min(cell.cell_x),
-                    max_x.max(cell.cell_x),
-                    min_z.min(cell.cell_z),
-                    max_z.max(cell.cell_z),
-                )
-            },
-        );
-
-        let center_x = (min_x + max_x) as f32 / 2.0;
-        let center_z = (min_z + max_z) as f32 / 2.0;
-
-        log::info!(
-            "Hex field bounds: x[{min_x} to {max_x}], z[{min_z} to {max_z}], centering at ({center_x:.1}, {center_z:.1})"
-        );
-
-        let entities: HashMap<Hex, Entity> = all_cells
-            .into_iter()
-            .map(|cell| {
-                let hex = layout.world_pos_to_hex(vec2(cell.cell_x as f32, cell.cell_z as f32));
-                let pos = layout.hex_to_world_pos(hex);
-
-                // Calculate biome-based color
-                let biome = cell.biome;
-                let elevation = cell.elevation;
-                let color = calculate_hex_color(biome, elevation);
-                // log::info!("{color:?}");
-                let material = materials.add(ColorMaterial::from(color));
-
-                let id = commands
-                    .spawn((
-                        Mesh2d(mesh_handle.clone()),
-                        MeshMaterial2d(material),
-                        Transform::from_xyz(pos.x, pos.y, 0.0),
-                    ))
-                    .id();
-                (hex, id)
-            })
-            .collect();
-
-        // DEBUG: Log total number of entities created
-        log::info!("Created {} hex entities for rendering", entities.len());
+        // Add region to world data
+        world_data.add_region(valid_chunks);
     }
+
+    // Calculate center offset after all regions are loaded
+    world_data.finalize();
+
+    // Log coordinate ranges for debugging
+    let chunk_coords: Vec<_> = world_data.chunks.keys().collect();
+    let min_x = chunk_coords.iter().map(|(x, _)| *x).min().unwrap_or(0);
+    let max_x = chunk_coords.iter().map(|(x, _)| *x).max().unwrap_or(0);
+    let min_z = chunk_coords.iter().map(|(_, z)| *z).min().unwrap_or(0);
+    let max_z = chunk_coords.iter().map(|(_, z)| *z).max().unwrap_or(0);
+
+    log::info!(
+        "World data loaded: {} total chunks, center offset: ({:.1}, {:.1})",
+        world_data.chunks.len(),
+        world_data.center_offset.x,
+        world_data.center_offset.y
+    );
+    log::info!(
+        "Chunk coordinate ranges: X=[{}, {}], Z=[{}, {}]",
+        min_x,
+        max_x,
+        min_z,
+        max_z
+    );
 }
 
 /// Camera controls for zooming and panning
@@ -166,21 +149,4 @@ fn camera_controls(
             }
         }
     }
-}
-
-/// Compute a bevy mesh from the layout
-fn hexagonal_plane(hex_layout: &HexLayout) -> Mesh {
-    let mesh_info = PlaneMeshBuilder::new(hex_layout)
-        .facing(Vec3::Z)
-        .with_scale(Vec3::splat(0.98))
-        .center_aligned()
-        .build();
-    Mesh::new(
-        PrimitiveTopology::TriangleList,
-        RenderAssetUsages::RENDER_WORLD,
-    )
-    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, mesh_info.vertices)
-    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, mesh_info.normals)
-    .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, mesh_info.uvs)
-    .with_inserted_indices(Indices::U16(mesh_info.indices))
 }
